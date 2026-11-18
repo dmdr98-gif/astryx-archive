@@ -37,7 +37,7 @@ import {
   renderComputerAgentText,
 } from '../../foundation/agent-docs/computer-agent-text.mjs';
 import {resolveAgentDocsRoot} from '../../foundation/agent-docs/agent-docs-target.mjs';
-import {renderAgentDocsBlock} from '../../foundation/agent-docs/agent-docs.mjs';
+import {renderProjectAgentDocsBlock} from '../docs/_adapter.mjs';
 import {
   savedName,
   projectPlacesValue,
@@ -53,11 +53,15 @@ import {ERROR_CODES} from '../../foundation/response/error-codes.mjs';
 
 export {COMPUTER_COMMAND, COMPUTER_INSTALL_STEP, displayHomePath};
 export {
+  leftoverIntegrationSkills,
   readProjectPlaces,
+  removeIntegrationSkillFiles,
   removeSkillPlace,
   writeSkillPlace,
 } from '../../foundation/agent-docs/skill-place-files.mjs';
 import {keptText, skillPlaceEscape} from '../../foundation/agent-docs/skill-place-files.mjs';
+export {integrationSkillFiles as integrationSkillTexts} from '../docs/skills/skills.mjs';
+import {projectIntegrationSkills} from '../docs/_adapter.mjs';
 
 // What the run leaf reads before it writes agent docs: the state of the files
 // it is about to write.
@@ -172,7 +176,7 @@ export function assertPlaceWithin(place, projectRoot) {
  * @returns {Promise<string>}
  */
 export async function projectSkillText(projectRoot) {
-  return renderProjectSkill(await renderAgentDocsBlock(projectRoot));
+  return renderProjectSkill(await renderProjectAgentDocsBlock(projectRoot));
 }
 
 /**
@@ -221,7 +225,7 @@ export function computerSkillFoldersSaved() {
  * One receipt row, and its line, for one skill file a run wrote or removed.
  * Null for a file that was not there.
  * @param {import('../../foundation/agent-docs/skill-places.mjs').SkillPlace} place
- * @param {{file: string, action: string, reason?: 'edited' | 'not-astryx' | 'pair-kept' | 'computer-skill'}} row
+ * @param {{file: string, action: string, reason?: 'edited' | 'not-astryx' | 'pair-kept' | 'computer-skill', skill?: string}} row
  * @param {(file: string) => string} shown the file as the receipt names it
  * @param {string} editedHint what a person does with a file they edited
  * @returns {{entry: import('./init.type.mjs').InitSkillFile, line: string} | null}
@@ -234,6 +238,7 @@ export function skillReceiptRow(place, row, shown, editedHint) {
     place: savedName(place),
     action: /** @type {import('./init.type.mjs').InitSkillFile['action']} */ (row.action),
   };
+  if (row.skill) entry.skill = row.skill;
   if (row.reason) entry.reason = row.reason;
   const line =
     entry.action === 'kept'
@@ -242,4 +247,17 @@ export function skillReceiptRow(place, row, shown, editedHint) {
         ? `[ok] Astryx skill: ${entry.path} already current, nothing changed`
         : `[ok] Astryx skill: ${entry.path} ${entry.action}`;
   return {entry, line};
+}
+
+/**
+ * Why each skill the project's integrations declare was left out.
+ * @param {string} projectRoot
+ * @returns {Promise<Array<{package: string, message: string}>>}
+ */
+export async function integrationSkillProblems(projectRoot) {
+  try {
+    return (await projectIntegrationSkills(projectRoot)).problems;
+  } catch {
+    return [];
+  }
 }

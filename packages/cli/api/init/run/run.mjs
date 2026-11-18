@@ -16,6 +16,7 @@
  * programmatic caller stays quiet.
  */
 
+import {renderProjectAgentDocsBlock} from '../../docs/_adapter.mjs';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import {CLI_ROOT} from '../../../foundation/fs/paths.mjs';
@@ -30,6 +31,10 @@ import {
   STARTER_THEME,
   addComputerSkillFolders,
   assertPlaceWithin,
+  integrationSkillProblems,
+  integrationSkillTexts,
+  leftoverIntegrationSkills,
+  removeIntegrationSkillFiles,
   computerSkillText,
   inspectAgentDocs,
   projectInstallStep,
@@ -50,7 +55,6 @@ import {
   assertAgentDocsTarget,
   removeProjectAgentDocs,
   installAgentDocs,
-  renderAgentDocsBlock,
   agentDocsTargetDir,
   readAgentDocTexts,
   agentDocChange,
@@ -186,7 +190,7 @@ async function applyAgents(cwd, options, invocation, data) {
     const targetDir = paths ? cwd : root;
     // With explicit paths, installAgentDocs checks each file's own folder.
     if (!paths) assertAgentDocsTarget(targetDir);
-    const renderedBlock = await renderAgentDocsBlock(root);
+    const renderedBlock = await renderProjectAgentDocsBlock(root);
     const before = readAgentDocTexts(targetDir, paths ?? AGENT_DOC_PATHS);
     // Read-only, before the write: whether the project's agent docs were
     // already current, so default mode can tell a set-up app from a new one.
@@ -311,7 +315,7 @@ async function applyPlaces(cwd, options, invocation, data, given) {
   /** @param {import('../../../foundation/agent-docs/skill-places.mjs').SkillPlace} place */
   const record = (
     place,
-    /** @type {ReturnType<typeof writeSkillPlace>} */ rows,
+    /** @type {Array<{file: string, action: import('../../../foundation/agent-docs/managed-skill-file.mjs').ManagedFileAction, reason?: 'edited' | 'not-astryx' | 'pair-kept' | 'computer-skill', skill?: string}>} */ rows,
   ) => {
     for (const row of rows) {
       const receipt = skillReceiptRow(place, row, shown, 'delete it to get the current text');
@@ -340,6 +344,10 @@ async function applyPlaces(cwd, options, invocation, data, given) {
   // holds the guidance.
   const text =
     skillPlaces.length > 0 && projectRoot ? await projectSkillText(projectRoot) : null;
+  // Each skill an integration declares goes into every skill place beside
+  // the project skill.
+  const declared =
+    text != null && projectRoot ? await integrationSkillTexts(projectRoot) : null;
   if (previous && projectRoot && projectPlaces.length > 0) {
     saveProjectPlaces(projectRoot, projectPlaces, {check: true});
   }
@@ -347,6 +355,13 @@ async function applyPlaces(cwd, options, invocation, data, given) {
   // project never goes without the guidance.
   if (projectPlaces.some(place => place.kind === 'agents-md')) {
     await applyAgents(cwd, options, invocation, data);
+    // Without a skill place, a left-out skill still loses its line in the
+    // block; say so once.
+    if (declared == null && projectRoot) {
+      for (const problem of await integrationSkillProblems(projectRoot)) {
+        logger.warn(`Note: ${problem.package}: ${problem.message}`);
+      }
+    }
   }
   // Whether the guidance landed in a skill place: a place whose files are
   // all a person's own is kept as it is, so it holds no Astryx text.
@@ -359,6 +374,19 @@ async function applyPlaces(cwd, options, invocation, data, given) {
       if (rows.some(row => row.action !== 'kept')) landed = true;
       actions.push(...rows.map(row => row.action));
       record(place, rows);
+      if (declared) {
+        for (const each of declared.skills) {
+          record(place, writeSkillPlace(place, projectRoot, each.text, each.name));
+        }
+        const keep = new Set(declared.skills.map(each => each.name));
+        record(
+          place,
+          removeIntegrationSkillFiles(leftoverIntegrationSkills(place, projectRoot, keep)),
+        );
+      }
+    }
+    for (const problem of declared?.problems ?? []) {
+      logger.warn(`Note: ${problem.package}: ${problem.message}`);
     }
     // Without the block, the project skill files say whether the project
     // was set up before this run, as the agent docs do for the block.
