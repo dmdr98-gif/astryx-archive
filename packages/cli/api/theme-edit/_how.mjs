@@ -2156,6 +2156,7 @@ async function pictureLook(cwd, name, read) {
       source: 'picture',
       scale: read.scale,
       traits: read.traits.map(({step, ...tr}) => tr),
+      slots: read.slots,
     },
     results,
     unsure,
